@@ -1,0 +1,204 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Particle Heart Animation</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+        }
+        #heart-path {
+            display: none;
+        }
+        /* Start Button/Overlay */
+        #start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            color: #ff1493;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            cursor: pointer;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        .play-btn {
+            border: 2px solid #ff1493;
+            padding: 15px 30px;
+            border-radius: 30px;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <div class="play-btn">Play Animation</div>
+        <p style="color: white; font-size: 14px;">(Enables Rose.mp3)</p>
+    </div>
+
+    <!-- Music with fallback -->
+    <audio id="bg-music" loop>
+        <source src="rose.mp3" type="audio/mpeg">
+    </audio>
+
+    <svg id="heart-path" viewBox="0 0 600 600">
+        <path d="M300,150 C300,150 250,50 150,50 C50,50 50,150 50,150 C50,250 300,450 300,450 C300,450 550,250 550,150 C550,150 550,50 450,50 C350,50 300,150 300,150 Z"></path>
+    </svg>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // Mobile Friendly Camera distance
+        camera.position.z = window.innerWidth < 600 ? 750 : 500;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // --- FIXED: 3D Text (Rose) without black background ---
+        function createTextSprite(text) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 1024; // Higher resolution
+            canvas.height = 512;
+            
+            // Explicitly clear canvas to be transparent
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            
+            context.font = "Bold 160px Arial";
+            context.fillStyle = "#ff1493";
+            context.textAlign = "center";
+            context.textBaseline = "middle";
+            
+            // Soft glow
+            context.shadowBlur = 20;
+            context.shadowColor = "#ff1493";
+            context.fillText(text, 512, 256);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            // This line fixes the "black box" artifacts
+            texture.premultipliedAlpha = false; 
+
+            const material = new THREE.SpriteMaterial({ 
+                map: texture, 
+                transparent: true, 
+                opacity: 0,
+                depthWrite: false // Prevents the text box from cutting particles
+            });
+            
+            const sprite = new THREE.Sprite(material);
+            
+            // Mobile scaling
+            const textScale = window.innerWidth < 600 ? 250 : 350;
+            sprite.scale.set(textScale, textScale/2, 1);
+            return sprite;
+        }
+
+        const nameSprite = createTextSprite("Rose");
+        scene.add(nameSprite);
+
+        // --- Original Particle Logic ---
+        const path = document.querySelector("path");
+        const length = path.getTotalLength();
+        const vertices = [];
+
+        for (let i = 0; i < length; i += 0.5) {
+            const point = path.getPointAtLength(i);
+            const vector = new THREE.Vector3();
+            vector.x = (point.x - 300) + (Math.random() - 0.5) * 30;
+            vector.y = (-point.y + 300) + (Math.random() - 0.5) * 30;
+            vector.z = (Math.random() - 0.5) * 70;
+            vertices.push(vector);
+        }
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+        const material = new THREE.PointsMaterial({
+            color: 0xff1493,
+            size: 2,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+
+        // --- Animation Logic (Original Style) ---
+        const tl = gsap.timeline({ repeat: -1, yoyo: true, paused: true });
+        const positions = geometry.attributes.position.array;
+
+        vertices.forEach((vector, i) => {
+            tl.from(vector, {
+                x: 0, y: 0, z: 0,
+                ease: "power2.inOut",
+                duration: gsap.utils.random(2, 5),
+                onUpdate: () => {
+                    positions[i * 3] = vector.x;
+                    positions[i * 3 + 1] = vector.y;
+                    positions[i * 3 + 2] = vector.z;
+                    geometry.attributes.position.needsUpdate = true;
+                }
+            }, i * 0.001);
+        });
+
+        // Sync Name Growth with Heart Animation
+        tl.to(nameSprite.material, {
+            opacity: 1,
+            duration: 2,
+            ease: "power2.inOut"
+        }, 1.5);
+
+        tl.from(nameSprite.scale, {
+            x: 0,
+            y: 0,
+            duration: 2.5,
+            ease: "back.out(1.7)"
+        }, 1.5);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            particles.rotation.y += 0.002;
+            nameSprite.rotation.y = particles.rotation.y; // Keep text aligned with heart
+            renderer.render(scene, camera);
+        }
+
+        // --- Start Logic ---
+        document.getElementById('start-overlay').addEventListener('click', function() {
+            this.style.display = 'none';
+            const audio = document.getElementById('bg-music');
+            audio.play().catch(() => console.log("Music file rose.mp3 not found, but animation starting..."));
+            tl.play();
+            animate();
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.position.z = window.innerWidth < 600 ? 750 : 500;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
